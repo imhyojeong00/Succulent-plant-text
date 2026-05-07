@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cluster System</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+</head>
+<body>
+    <div id="ui-layer">
+        <input type="text" id="succulent-input" placeholder="TYPE A-Z " autofocus>
+        
+        <div id="data-log">
+            DIST: <span id="dist-val">-</span> | 
+            ANGLE: <span id="angle-val">-</span>
+            
+            <button id="decode-btn">[COLLAPSE]</button>
+            <button id="save-btn">[SAVE]</button>
+        </div>
+    </div>
+    <div id="render-stage"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
