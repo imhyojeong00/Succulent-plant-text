@@ -1,29 +1,29 @@
 const IMAGE_CONFIG = {
-  A: { scale: 0.6, offsetY: 0 },
+  A: { scale: 0.69, offsetY: 0 },
   B: { scale: 1.0, offsetY: 0 },
   C: { scale: 1.5, offsetY: 0 },
-  D: { scale: 1.2, offsetY: 0 },
+  D: { scale: 1.3, offsetY: 0 },
   E: { scale: 1.35, offsetY: 0 },
   F: { scale: 1.1, offsetY: 0 },
-  G: { scale: 2.0, offsetY: 0 },
+  G: { scale: 2.1, offsetY: 0 },
   H: { scale: 1.3, offsetY: 0 },
   I: { scale: 1.3, offsetY: 0 },
-  J: { scale: 0.9, offsetY: 0 },
-  K: { scale: 1.7, offsetY: 0 },
+  J: { scale: 1.0, offsetY: 0 },
+  K: { scale: 1.6, offsetY: 0 },
   L: { scale: 1.5, offsetY: 0 },
   M: { scale: 1.28, offsetY: 0 },
   N: { scale: 1.22, offsetY: 0 },
   O: { scale: 1.3, offsetY: 0 },
-  P: { scale: 1.46, offsetY: 0 },
+  P: { scale: 1.5, offsetY: 0 },
   Q: { scale: 1.3, offsetY: 0 },
   R: { scale: 2.39, offsetY: 0 },
   S: { scale: 1.95, offsetY: 0 },
-  T: { scale: 0.9, offsetY: 0 },
+  T: { scale: 1.0, offsetY: 0 },
   U: { scale: 0.95, offsetY: 0 },
-  V: { scale: 1.15, offsetY: 0 },
+  V: { scale: 1.2, offsetY: 0 },
   W: { scale: 1.6, offsetY: 0 },
   X: { scale: 1.6, offsetY: 0 },
-  Y: { scale: 0.8, offsetY: 0 },
+  Y: { scale: 1.0, offsetY: 0 },
   Z: { scale: 1.0, offsetY: 0 },
 
   A1: { scale: 0.9, isMutant: true },
@@ -180,25 +180,41 @@ const GENETIC_MAP = {
   Z: { x: -230, y: 200 }
 };
 
-const REQUIRED_FOR_MASTER = ["A", "AB_INTER", "AC_COMBO", "DT_INTER", "B", "R", "P", "E", "F"];
+const REQUIRED_FOR_MASTER = [
+  "A",
+  "AB_INTER",
+  "AC_COMBO",
+  "DT_INTER",
+  "B",
+  "R",
+  "P",
+  "E",
+  "F"
+];
+
+const START_X = 25000;
+const START_Y = 25000;
+
+/*
+  엔터 후 새 줄의 x 이동 거리.
+  기존 900은 너무 멀어서 260으로 줄임.
+  더 붙이고 싶으면 180~220 정도로 낮추면 됨.
+*/
+const LINE_GAP_X = 260;
 
 const imageCache = {};
-
-let collectedSet = new Set();
-let masterSpawned = false;
 
 let stage;
 let input;
 let distLog;
 let angleLog;
 
-const START_X = 25000;
-const START_Y = 25000;
-const LINE_GAP = 220;
+let collectedSet = new Set();
+let masterSpawned = false;
 
-let lineIndex = 0;
 let lastKey = null;
 let lastPos = { x: START_X, y: START_Y };
+let growthAngle = -90;
 
 let wCounter = 0;
 let aCounter = 0;
@@ -212,20 +228,26 @@ let committedSequence = "";
 let currentInputSnapshot = "";
 let activeTimers = [];
 
+let currentLineIndex = 0;
+let currentLineStartX = START_X;
+
+let rebuildFrameId = null;
+
 window.addEventListener("DOMContentLoaded", init);
 
-function init() {
-  preloadImages();
-
+async function init() {
   stage = document.getElementById("render-stage");
   input = document.getElementById("succulent-input");
   distLog = document.getElementById("dist-val");
   angleLog = document.getElementById("angle-val");
 
   if (!stage || !input) {
-    console.error("필수 요소를 찾지 못했습니다. index.html의 id를 확인하세요.");
+    console.error("필수 요소를 찾지 못했습니다.");
     return;
   }
+
+  input.disabled = true;
+  input.placeholder = "LOADING PLANTS...";
 
   document.getElementById("save-btn")?.addEventListener("click", captureFullStage);
   document.getElementById("decode-btn")?.addEventListener("click", toggleMutantOnly);
@@ -236,40 +258,116 @@ function init() {
 
   createCoordinateLayer();
 
+  await preloadImages();
+
+  input.disabled = false;
+  input.placeholder = "TYPE A-Z";
+
   input.addEventListener("keydown", handleKeydown);
   input.addEventListener("input", handleInput);
 
-  setTimeout(() => {
-    input.focus();
-  }, 100);
+  input.focus();
 
   moveCamera(START_X, START_Y + window.innerHeight * 0.2, "auto");
 
   console.log("Cluster System ready");
 }
 
-function preloadImages() {
-  Object.keys(IMAGE_CONFIG).forEach((name) => {
-    const img = new Image();
-    img.decoding = "async";
-    img.loading = "eager";
-    img.src = `./images/${name}.png`;
-    imageCache[name] = img;
-  });
+async function preloadImages() {
+  const names = Object.keys(IMAGE_CONFIG);
+
+  await Promise.all(
+    names.map((name) => {
+      return new Promise((resolve) => {
+        const img = new Image();
+
+        img.decoding = "async";
+        img.loading = "eager";
+        img.fetchPriority = "high";
+
+        img.onload = async () => {
+          try {
+            if (img.decode) await img.decode();
+          } catch (e) {}
+
+          imageCache[name] = img;
+          resolve();
+        };
+
+        img.onerror = () => {
+          const fallbackName = IMAGE_FALLBACK_MAP[name];
+
+          if (fallbackName) {
+            const fallback = new Image();
+
+            fallback.decoding = "async";
+            fallback.loading = "eager";
+            fallback.fetchPriority = "high";
+
+            fallback.onload = async () => {
+              try {
+                if (fallback.decode) await fallback.decode();
+              } catch (e) {}
+
+              imageCache[name] = fallback;
+              resolve();
+            };
+
+            fallback.onerror = () => {
+              console.warn("이미지 로드 실패:", name);
+              imageCache[name] = img;
+              resolve();
+            };
+
+            fallback.src = `./images/${fallbackName}.png`;
+          } else {
+            console.warn("이미지 로드 실패:", name);
+            imageCache[name] = img;
+            resolve();
+          }
+        };
+
+        img.src = `./images/${name}.png`;
+      });
+    })
+  );
 }
 
 function handleKeydown(e) {
   if (e.key === "Enter") {
     e.preventDefault();
 
+    const normalizedCurrent = normalizeInput(input.value);
+
+    if (input.value !== normalizedCurrent) {
+      input.value = normalizedCurrent;
+    }
+
+    currentInputSnapshot = normalizedCurrent;
     committedSequence += currentInputSnapshot + "\n";
     currentInputSnapshot = "";
     input.value = "";
 
-    processLineBreak(false);
-
+    requestRebuild();
     updateDataLog(0, 90, false);
-    moveCamera(lastPos.x, lastPos.y, "auto");
+    return;
+  }
+
+  /*
+    중요 수정:
+    엔터를 친 뒤에는 이전 줄 글자가 input.value에 보이지 않음.
+    그래서 input이 비어 있는 상태에서 Backspace를 누르면
+    committedSequence의 마지막 글자나 줄바꿈을 직접 지우도록 함.
+    즉, 전에 써둔 글자도 Backspace로 지우면 이미지가 함께 사라짐.
+  */
+  if (e.key === "Backspace" && input.value.length === 0 && committedSequence.length > 0) {
+    e.preventDefault();
+
+    committedSequence = committedSequence.slice(0, -1);
+    currentInputSnapshot = "";
+
+    requestRebuild();
+    updateDataLog(0, 90, false);
     return;
   }
 }
@@ -281,29 +379,23 @@ function handleInput(e) {
     e.target.value = normalized;
   }
 
-  if (normalized === currentInputSnapshot) return;
-
-  const isSimpleAppend =
-    normalized.length > currentInputSnapshot.length &&
-    normalized.startsWith(currentInputSnapshot);
-
-  if (isSimpleAppend) {
-    const added = normalized.slice(currentInputSnapshot.length);
-
-    for (const char of added) {
-      processCharacter(char, false);
-    }
-
-    currentInputSnapshot = normalized;
-    return;
-  }
-
   currentInputSnapshot = normalized;
-  rebuildFromSequence(committedSequence + currentInputSnapshot);
+  requestRebuild();
 }
 
 function normalizeInput(value) {
   return value.toUpperCase().replace(/[^A-Z?+]/g, "");
+}
+
+function requestRebuild() {
+  if (rebuildFrameId !== null) {
+    cancelAnimationFrame(rebuildFrameId);
+  }
+
+  rebuildFrameId = requestAnimationFrame(() => {
+    rebuildFrameId = null;
+    rebuildFromSequence(committedSequence + currentInputSnapshot);
+  });
 }
 
 function clearActiveTimers() {
@@ -328,9 +420,12 @@ function scheduleNode(callback, delay, instant = false) {
 function resetRuntimeState() {
   clearActiveTimers();
 
-  lineIndex = 0;
+  currentLineIndex = 0;
+  currentLineStartX = START_X;
+
   lastKey = null;
   lastPos = { x: START_X, y: START_Y };
+  growthAngle = -90;
 
   wCounter = 0;
   aCounter = 0;
@@ -366,21 +461,30 @@ function rebuildFromSequence(sequence) {
 function processLineBreak(isRebuild = false) {
   typedHistory.push("\n");
 
-  lineIndex++;
+  currentLineIndex += 1;
+
+  /*
+    엔터 후 너무 옆으로 가지 않도록 LINE_GAP_X를 작게 사용.
+    새 줄은 기존 글자를 지우지 않고,
+    첫 시작점 근처로 돌아와서 다시 위로 쌓임.
+  */
+  currentLineStartX = START_X + currentLineIndex * LINE_GAP_X;
 
   lastPos = {
-    x: START_X,
-    y: START_Y - LINE_GAP * lineIndex
+    x: currentLineStartX,
+    y: START_Y
   };
 
   lastKey = null;
+  growthAngle = -90;
 
   wCounter = 0;
   aCounter = 0;
   zCounter = 0;
+  firstASequenceSpawned = false;
 
   if (!isRebuild) {
-    moveCamera(lastPos.x, lastPos.y, "auto");
+    moveCamera(currentLineStartX, START_Y, "auto");
   }
 }
 
@@ -459,11 +563,18 @@ function getDistanceAndAngle(prevChar, currentChar) {
   let distance = 0;
   let angle = 90;
 
-  if (prevChar && GENETIC_MAP[prevChar] && GENETIC_MAP[currentChar] && currentChar !== prevChar) {
+  if (
+    prevChar &&
+    GENETIC_MAP[prevChar] &&
+    GENETIC_MAP[currentChar] &&
+    currentChar !== prevChar
+  ) {
     const p1 = GENETIC_MAP[prevChar];
     const p2 = GENETIC_MAP[currentChar];
 
-    distance = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+    distance = Math.sqrt(
+      Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)
+    );
 
     if (distance < 60) angle = 90;
     else if (distance < 140) angle = 75;
@@ -495,7 +606,16 @@ function renderAHorizontalSequence(baseX, baseY, sourceInput = "A", instant = fa
 
   for (let i = 0; i < aImages.length; i++) {
     scheduleNode(() => {
-      createSucculentElement(aImages[i], baseX + spacing * (i + 1), baseY, 0, sourceInput, "A", null, null);
+      createSucculentElement(
+        aImages[i],
+        baseX + spacing * (i + 1),
+        baseY,
+        0,
+        sourceInput,
+        "A",
+        null,
+        null
+      );
     }, 120 * (i + 1), instant);
   }
 }
@@ -535,29 +655,83 @@ function renderACSequence(sourceInput = "C", instant = false) {
   renderIntermediateNode("AC_COMBO", sourceInput);
 
   scheduleNode(() => {
-    createSucculentElement("AC_INTER1", lastPos.x, lastPos.y - 120, 0, sourceInput, "A/C", null, null);
+    createSucculentElement(
+      "AC_INTER1",
+      lastPos.x,
+      lastPos.y - 120,
+      0,
+      sourceInput,
+      "A/C",
+      null,
+      null
+    );
   }, 500, instant);
 }
 
 function renderAKSequence(sourceInput = "K", instant = false) {
-  createSucculentElement("AK_INTER", lastPos.x, lastPos.y - 70, 0, sourceInput, "A/K", null, null);
+  createSucculentElement(
+    "AK_INTER",
+    lastPos.x,
+    lastPos.y - 70,
+    0,
+    sourceInput,
+    "A/K",
+    null,
+    null
+  );
 
   scheduleNode(() => {
-    createSucculentElement("AK_INTER1", lastPos.x, lastPos.y - 140, 0, sourceInput, "A/K", null, null);
+    createSucculentElement(
+      "AK_INTER1",
+      lastPos.x,
+      lastPos.y - 140,
+      0,
+      sourceInput,
+      "A/K",
+      null,
+      null
+    );
   }, 500, instant);
 }
 
 function renderQSequence(baseX, baseY, sourceInput = "Q", instant = false) {
   scheduleNode(() => {
-    createSucculentElement("Q1", baseX + 180, baseY, 0, sourceInput, "Q", null, null);
+    createSucculentElement(
+      "Q1",
+      baseX + 180,
+      baseY,
+      0,
+      sourceInput,
+      "Q",
+      null,
+      null
+    );
   }, 250, instant);
 }
 
 function renderDTSequence(sourceInput = "T", instant = false) {
-  createSucculentElement("DT_INTER", lastPos.x, lastPos.y - 70, 0, sourceInput, "D/T", null, null);
+  createSucculentElement(
+    "DT_INTER",
+    lastPos.x,
+    lastPos.y - 70,
+    0,
+    sourceInput,
+    "D/T",
+    null,
+    null
+  );
 
   scheduleNode(() => {
-    createSucculentElement("DT_DELAYED", lastPos.x, lastPos.y - 90, 0, sourceInput, "D/T", null, null);
+    createSucculentElement(
+      "DT_DELAYED",
+      lastPos.x,
+      lastPos.y - 90,
+      0,
+      sourceInput,
+      "D/T",
+      null,
+      null
+    );
     checkMasterLogic("DT_DELAYED");
   }, 800, instant);
 }
@@ -570,7 +744,17 @@ function renderKDiagonalSequence(sourceInput = "K", instant = false) {
     scheduleNode(() => {
       const nX = lastPos.x + Math.cos(angle) * 195 * (i + 1);
       const nY = lastPos.y + Math.sin(angle) * 195 * (i + 1);
-      createSucculentElement(kImages[i], nX, nY, 0, sourceInput, "K", null, null);
+
+      createSucculentElement(
+        kImages[i],
+        nX,
+        nY,
+        0,
+        sourceInput,
+        "K",
+        null,
+        null
+      );
     }, 120 * (i + 1), instant);
   }
 }
@@ -630,7 +814,16 @@ function renderRandomNode(imgName, sourceInput = "?") {
   );
 }
 
-function createSucculentElement(imgName, x, y, rot, sourceInput = "-", prevInput = "-", distance = null, angle = null) {
+function createSucculentElement(
+  imgName,
+  x,
+  y,
+  rot,
+  sourceInput = "-",
+  prevInput = "-",
+  distance = null,
+  angle = null
+) {
   if (!stage) return;
 
   const node = document.createElement("div");
@@ -644,20 +837,25 @@ function createSucculentElement(imgName, x, y, rot, sourceInput = "-", prevInput
 
   node.classList.add(config.isMutant ? "mutant-type" : "normal-type");
 
-  node.style.zIndex = imgName.includes("INTER") || imgName === "DT_DELAYED"
-    ? 9000
-    : Math.floor(5000 - (y - START_Y));
+  node.style.zIndex =
+    imgName.includes("INTER") || imgName === "DT_DELAYED"
+      ? 9000
+      : Math.floor(5000 - (y - START_Y));
 
   recordReceipt(imgName, x, y, rot, sourceInput, prevInput, distance, angle, config);
 
-  const img = document.createElement("img");
+  const cachedImg = imageCache[imgName];
+  const img = cachedImg ? cachedImg.cloneNode(false) : new Image();
+
   const baseWidth = 320 * config.scale;
 
   img.decoding = "async";
   img.loading = "eager";
+  img.fetchPriority = "high";
 
   img.style.width = `${baseWidth}px`;
   img.style.height = "auto";
+  img.draggable = false;
 
   node.style.left = `${x - baseWidth / 2}px`;
   node.style.top = `${y - baseWidth / 2 + (config.offsetY || 0)}px`;
@@ -674,11 +872,13 @@ function createSucculentElement(imgName, x, y, rot, sourceInput = "-", prevInput
     }
 
     img.dataset.fallbackTried = "true";
-    img.src = `./images/${fallbackName}.png`;
+    img.src = imageCache[fallbackName]?.src || `./images/${fallbackName}.png`;
     console.warn(`Missing image: ${imgName}. Fallback to ${fallbackName}.`);
   };
 
-  img.src = imageCache[imgName]?.src || `./images/${imgName}.png`;
+  if (!cachedImg) {
+    img.src = `./images/${imgName}.png`;
+  }
 
   node.appendChild(img);
   stage.appendChild(node);
@@ -787,24 +987,43 @@ function downloadReceipt() {
 }
 
 function calculateCoords(dist, angle, isSame) {
-  const vSpace = 100;
-  const hSpace = 160;
+  const step = 108;
+  const sameStep = 72;
 
-  if (isSame) {
+  if (lastKey === null) {
+    growthAngle = -90;
+
     return {
-      nX: lastPos.x + hSpace * (Math.random() > 0.5 ? 1 : -1),
-      nY: lastPos.y + Math.random() * 40 - 20,
-      rot: Math.random() * 16 - 8
+      nX: lastPos.x,
+      nY: lastPos.y,
+      rot: 0
     };
   }
 
-  const rad = (angle * Math.PI) / 180;
-  const dir = Math.random() > 0.5 ? 1 : -1;
+  if (isSame) {
+    const side = Math.sin(typedHistory.length * 1.7) > 0 ? 1 : -1;
+    const curve = Math.sin(typedHistory.length * 0.9) * 14;
+
+    return {
+      nX: lastPos.x + side * sameStep,
+      nY: lastPos.y - 26 + curve * 0.15,
+      rot: side * 7
+    };
+  }
+
+  const geneticInfluence = Math.max(8, Math.min(42, angle * 0.42));
+  const wave = Math.sin(typedHistory.length * 0.82) * 9;
+  const side = Math.cos(typedHistory.length * 1.13) > 0 ? 1 : -1;
+
+  growthAngle += side * geneticInfluence * 0.18 + wave * 0.35;
+  growthAngle = Math.max(-128, Math.min(-52, growthAngle));
+
+  const rad = (growthAngle * Math.PI) / 180;
 
   return {
-    nX: lastPos.x + Math.cos(rad) * vSpace * dir,
-    nY: lastPos.y - Math.sin(rad) * vSpace,
-    rot: (90 - angle) * dir
+    nX: lastPos.x + Math.cos(rad) * step,
+    nY: lastPos.y + Math.sin(rad) * step,
+    rot: growthAngle + 90
   };
 }
 
@@ -820,7 +1039,7 @@ function updateDataLog(dist, angle, isSame) {
   if (!distLog || !angleLog) return;
 
   distLog.innerText = isSame ? "CLUSTER" : `${Math.round(dist)}mm`;
-  angleLog.innerText = isSame ? "HORIZON" : `${angle}°`;
+  angleLog.innerText = isSame ? "GROWTH" : `${angle}°`;
 }
 
 async function captureFullStage() {
