@@ -44,7 +44,7 @@ const IMAGE_CONFIG = {
   Q1: { scale: 0.8, isMutant: true },
   IC_INTER: { scale: 1.3, isMutant: true },
   AK_INTER: { scale: 1.3, isMutant: true },
-  AK_INTER1: { scale: 1.7, offsetY: -50, isMutant: true },
+  AK_INTER1: { scale: 1.9, offsetY: -50, isMutant: true },
   AB_INTER: { scale: 1.3, offsetY: -10, isMutant: true },
   AC_COMBO: { scale: 1.8, isMutant: true },
   AC_INTER1: { scale: 1.5, offsetY: -60, isMutant: true },
