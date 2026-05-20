@@ -194,7 +194,9 @@ let angleLog;
 
 const START_X = 25000;
 const START_Y = 25000;
+const LINE_GAP = 220;
 
+let lineIndex = 0;
 let lastKey = null;
 let lastPos = { x: START_X, y: START_Y };
 
@@ -205,6 +207,10 @@ let firstASequenceSpawned = false;
 
 let receiptRecords = [];
 let typedHistory = [];
+
+let committedSequence = "";
+let currentInputSnapshot = "";
+let activeTimers = [];
 
 window.addEventListener("DOMContentLoaded", init);
 
@@ -254,34 +260,131 @@ function preloadImages() {
 
 function handleKeydown(e) {
   if (e.key === "Enter") {
+    e.preventDefault();
+
+    committedSequence += currentInputSnapshot + "\n";
+    currentInputSnapshot = "";
     input.value = "";
-    lastKey = null;
-    lastPos = { x: START_X, y: START_Y };
 
-    wCounter = 0;
-    aCounter = 0;
-    zCounter = 0;
-    firstASequenceSpawned = false;
+    processLineBreak(false);
 
-    collectedSet.clear();
-    masterSpawned = false;
-
-    receiptRecords = [];
-    typedHistory = [];
-
-    stage.querySelectorAll(".succulent-node").forEach((node) => node.remove());
-
-    updateDataLog(0, 0, false);
-    moveCamera(START_X, START_Y + window.innerHeight * 0.2, "auto");
-    closeReceipt();
+    updateDataLog(0, 90, false);
+    moveCamera(lastPos.x, lastPos.y, "auto");
+    return;
   }
 }
 
 function handleInput(e) {
-  const char = e.target.value.toUpperCase().slice(-1);
+  const normalized = normalizeInput(e.target.value);
 
-  if (!char) return;
+  if (e.target.value !== normalized) {
+    e.target.value = normalized;
+  }
 
+  if (normalized === currentInputSnapshot) return;
+
+  const isSimpleAppend =
+    normalized.length > currentInputSnapshot.length &&
+    normalized.startsWith(currentInputSnapshot);
+
+  if (isSimpleAppend) {
+    const added = normalized.slice(currentInputSnapshot.length);
+
+    for (const char of added) {
+      processCharacter(char, false);
+    }
+
+    currentInputSnapshot = normalized;
+    return;
+  }
+
+  currentInputSnapshot = normalized;
+  rebuildFromSequence(committedSequence + currentInputSnapshot);
+}
+
+function normalizeInput(value) {
+  return value.toUpperCase().replace(/[^A-Z?+]/g, "");
+}
+
+function clearActiveTimers() {
+  activeTimers.forEach((id) => clearTimeout(id));
+  activeTimers = [];
+}
+
+function scheduleNode(callback, delay, instant = false) {
+  if (instant) {
+    callback();
+    return;
+  }
+
+  const timerId = setTimeout(() => {
+    callback();
+    activeTimers = activeTimers.filter((id) => id !== timerId);
+  }, delay);
+
+  activeTimers.push(timerId);
+}
+
+function resetRuntimeState() {
+  clearActiveTimers();
+
+  lineIndex = 0;
+  lastKey = null;
+  lastPos = { x: START_X, y: START_Y };
+
+  wCounter = 0;
+  aCounter = 0;
+  zCounter = 0;
+  firstASequenceSpawned = false;
+
+  collectedSet.clear();
+  masterSpawned = false;
+
+  receiptRecords = [];
+  typedHistory = [];
+
+  if (stage) {
+    stage.querySelectorAll(".succulent-node").forEach((node) => node.remove());
+  }
+}
+
+function rebuildFromSequence(sequence) {
+  resetRuntimeState();
+
+  for (const token of sequence) {
+    if (token === "\n") {
+      processLineBreak(true);
+    } else {
+      processCharacter(token, true);
+    }
+  }
+
+  updateReceiptIfOpen();
+  moveCamera(lastPos.x, lastPos.y, "auto");
+}
+
+function processLineBreak(isRebuild = false) {
+  typedHistory.push("\n");
+
+  lineIndex++;
+
+  lastPos = {
+    x: START_X,
+    y: START_Y - LINE_GAP * lineIndex
+  };
+
+  lastKey = null;
+
+  wCounter = 0;
+  aCounter = 0;
+  zCounter = 0;
+
+  if (!isRebuild) {
+    moveCamera(lastPos.x, lastPos.y, "auto");
+  }
+}
+
+function processCharacter(char, instant = false) {
   typedHistory.push(char);
 
   if (char === "?") {
@@ -296,7 +399,7 @@ function handleInput(e) {
 
   if (GENETIC_MAP[char] || char === "+") {
     if ((lastKey === "D" && char === "T") || (lastKey === "T" && char === "D")) {
-      renderDTSequence(char);
+      renderDTSequence(char, instant);
       checkMasterLogic("DT_INTER");
     }
 
@@ -311,12 +414,12 @@ function handleInput(e) {
     }
 
     if ((lastKey === "A" && char === "C") || (lastKey === "C" && char === "A")) {
-      renderACSequence(char);
+      renderACSequence(char, instant);
       checkMasterLogic("AC_COMBO");
     }
 
     if ((lastKey === "A" && char === "K") || (lastKey === "K" && char === "A")) {
-      renderAKSequence(char);
+      renderAKSequence(char, instant);
       checkMasterLogic("AK_INTER");
     }
 
@@ -337,11 +440,11 @@ function handleInput(e) {
 
       if (char === "A" && !firstASequenceSpawned) {
         firstASequenceSpawned = true;
-        renderAHorizontalSequence(lastPos.x, lastPos.y, char);
+        renderAHorizontalSequence(lastPos.x, lastPos.y, char, instant);
       }
 
-      if (char === "K") renderKDiagonalSequence(char);
-      if (char === "Q") renderQSequence(lastPos.x, lastPos.y, char);
+      if (char === "K") renderKDiagonalSequence(char, instant);
+      if (char === "Q") renderQSequence(lastPos.x, lastPos.y, char, instant);
 
       checkMasterLogic(char);
 
@@ -386,14 +489,14 @@ function processTyping(char) {
   lastKey = char;
 }
 
-function renderAHorizontalSequence(baseX, baseY, sourceInput = "A") {
+function renderAHorizontalSequence(baseX, baseY, sourceInput = "A", instant = false) {
   const spacing = 230;
   const aImages = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"];
 
   for (let i = 0; i < aImages.length; i++) {
-    setTimeout(() => {
+    scheduleNode(() => {
       createSucculentElement(aImages[i], baseX + spacing * (i + 1), baseY, 0, sourceInput, "A", null, null);
-    }, 120 * (i + 1));
+    }, 120 * (i + 1), instant);
   }
 }
 
@@ -428,47 +531,47 @@ function handleZVariant(sourceInput = "Z") {
   aCounter = 0;
 }
 
-function renderACSequence(sourceInput = "C") {
+function renderACSequence(sourceInput = "C", instant = false) {
   renderIntermediateNode("AC_COMBO", sourceInput);
 
-  setTimeout(() => {
+  scheduleNode(() => {
     createSucculentElement("AC_INTER1", lastPos.x, lastPos.y - 120, 0, sourceInput, "A/C", null, null);
-  }, 500);
+  }, 500, instant);
 }
 
-function renderAKSequence(sourceInput = "K") {
+function renderAKSequence(sourceInput = "K", instant = false) {
   createSucculentElement("AK_INTER", lastPos.x, lastPos.y - 70, 0, sourceInput, "A/K", null, null);
 
-  setTimeout(() => {
+  scheduleNode(() => {
     createSucculentElement("AK_INTER1", lastPos.x, lastPos.y - 140, 0, sourceInput, "A/K", null, null);
-  }, 500);
+  }, 500, instant);
 }
 
-function renderQSequence(baseX, baseY, sourceInput = "Q") {
-  setTimeout(() => {
+function renderQSequence(baseX, baseY, sourceInput = "Q", instant = false) {
+  scheduleNode(() => {
     createSucculentElement("Q1", baseX + 180, baseY, 0, sourceInput, "Q", null, null);
-  }, 250);
+  }, 250, instant);
 }
 
-function renderDTSequence(sourceInput = "T") {
+function renderDTSequence(sourceInput = "T", instant = false) {
   createSucculentElement("DT_INTER", lastPos.x, lastPos.y - 70, 0, sourceInput, "D/T", null, null);
 
-  setTimeout(() => {
+  scheduleNode(() => {
     createSucculentElement("DT_DELAYED", lastPos.x, lastPos.y - 90, 0, sourceInput, "D/T", null, null);
     checkMasterLogic("DT_DELAYED");
-  }, 800);
+  }, 800, instant);
 }
 
-function renderKDiagonalSequence(sourceInput = "K") {
+function renderKDiagonalSequence(sourceInput = "K", instant = false) {
   const angle = Math.atan2(GENETIC_MAP.K.y, GENETIC_MAP.K.x);
   const kImages = ["K_INTER1", "K_INTER2", "K_INTER3"];
 
   for (let i = 0; i < 3; i++) {
-    setTimeout(() => {
+    scheduleNode(() => {
       const nX = lastPos.x + Math.cos(angle) * 195 * (i + 1);
       const nY = lastPos.y + Math.sin(angle) * 195 * (i + 1);
       createSucculentElement(kImages[i], nX, nY, 0, sourceInput, "K", null, null);
-    }, 120 * (i + 1));
+    }, 120 * (i + 1), instant);
   }
 }
 
@@ -605,11 +708,12 @@ function recordReceipt(imgName, x, y, rot, sourceInput, prevInput, distance, ang
 
 function buildReceiptText() {
   const lines = [];
+  const inputSequence = typedHistory.join("").replace(/\n/g, " ↵ ");
 
   lines.push("==========================================");
   lines.push("        SUCCULENT GENETIC RECEIPT");
   lines.push("==========================================");
-  lines.push(`INPUT SEQUENCE : ${typedHistory.join("") || "-"}`);
+  lines.push(`INPUT SEQUENCE : ${inputSequence || "-"}`);
   lines.push(`TOTAL RECORDS  : ${receiptRecords.length}`);
   lines.push(`DATE           : ${new Date().toLocaleString()}`);
   lines.push("------------------------------------------");
@@ -719,10 +823,17 @@ function updateDataLog(dist, angle, isSame) {
   angleLog.innerText = isSame ? "HORIZON" : `${angle}°`;
 }
 
-function captureFullStage() {
-  const nodes = document.querySelectorAll(".succulent-node");
+async function captureFullStage() {
+  const nodes = [...document.querySelectorAll(".succulent-node")];
 
   if (nodes.length === 0) return;
+
+  const saveBtn = document.getElementById("save-btn");
+
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "...";
+  }
 
   let minX = Infinity;
   let minY = Infinity;
@@ -732,32 +843,73 @@ function captureFullStage() {
   nodes.forEach((node) => {
     const left = parseFloat(node.style.left);
     const top = parseFloat(node.style.top);
+    const img = node.querySelector("img");
+
+    const width = img ? img.offsetWidth : 600;
+    const height = img ? img.offsetHeight : 600;
 
     minX = Math.min(minX, left);
     minY = Math.min(minY, top);
-    maxX = Math.max(maxX, left + 600);
-    maxY = Math.max(maxY, top + 600);
+    maxX = Math.max(maxX, left + width);
+    maxY = Math.max(maxY, top + height);
   });
 
-  if (typeof html2canvas === "undefined") {
-    console.error("html2canvas가 로드되지 않았습니다.");
-    return;
-  }
+  const padding = 300;
+  const captureWidth = Math.ceil(maxX - minX + padding * 2);
+  const captureHeight = Math.ceil(maxY - minY + padding * 2);
 
-  html2canvas(stage, {
-    useCORS: true,
-    x: minX - 450,
-    y: minY - 450,
-    width: maxX - minX + 900,
-    height: maxY - minY + 900,
-    windowWidth: 50000,
-    windowHeight: 50000
-  }).then((canvas) => {
+  const captureBox = document.createElement("div");
+
+  captureBox.style.position = "fixed";
+  captureBox.style.left = "-99999px";
+  captureBox.style.top = "0";
+  captureBox.style.width = `${captureWidth}px`;
+  captureBox.style.height = `${captureHeight}px`;
+  captureBox.style.background = "#ffffff";
+  captureBox.style.overflow = "hidden";
+
+  nodes.forEach((node) => {
+    const clone = node.cloneNode(true);
+
+    const originalLeft = parseFloat(node.style.left);
+    const originalTop = parseFloat(node.style.top);
+
+    clone.style.left = `${originalLeft - minX + padding}px`;
+    clone.style.top = `${originalTop - minY + padding}px`;
+
+    captureBox.appendChild(clone);
+  });
+
+  document.body.appendChild(captureBox);
+
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
+  try {
+    if (typeof html2canvas === "undefined") {
+      console.error("html2canvas가 로드되지 않았습니다.");
+      return;
+    }
+
+    const canvas = await html2canvas(captureBox, {
+      backgroundColor: "#ffffff",
+      useCORS: true,
+      scale: 1
+    });
+
     const link = document.createElement("a");
-    link.href = canvas.toDataURL();
+    link.href = canvas.toDataURL("image/png");
     link.download = `succulent_${Date.now()}.png`;
     link.click();
-  });
+  } catch (err) {
+    console.error("Save failed:", err);
+  } finally {
+    captureBox.remove();
+
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "↓";
+    }
+  }
 }
 
 function toggleMutantOnly() {
