@@ -232,6 +232,9 @@ let currentLineIndex = 0;
 let currentLineStartX = START_X;
 
 let rebuildFrameId = null;
+let lastVisualSequence = "";
+let animatedTokenIndex = -1;
+let renderCycle = 0;
 
 window.addEventListener("DOMContentLoaded", init);
 
@@ -353,13 +356,6 @@ function handleKeydown(e) {
     return;
   }
 
-  /*
-    중요 수정:
-    엔터를 친 뒤에는 이전 줄 글자가 input.value에 보이지 않음.
-    그래서 input이 비어 있는 상태에서 Backspace를 누르면
-    committedSequence의 마지막 글자나 줄바꿈을 직접 지우도록 함.
-    즉, 전에 써둔 글자도 Backspace로 지우면 이미지가 함께 사라짐.
-  */
   if (e.key === "Backspace" && input.value.length === 0 && committedSequence.length > 0) {
     e.preventDefault();
 
@@ -388,13 +384,26 @@ function normalizeInput(value) {
 }
 
 function requestRebuild() {
+  const nextSequence = committedSequence + currentInputSnapshot;
+
+  if (
+    nextSequence.length === lastVisualSequence.length + 1 &&
+    nextSequence.startsWith(lastVisualSequence)
+  ) {
+    animatedTokenIndex = lastVisualSequence.length;
+  } else {
+    animatedTokenIndex = -1;
+  }
+
+  lastVisualSequence = nextSequence;
+
   if (rebuildFrameId !== null) {
     cancelAnimationFrame(rebuildFrameId);
   }
 
   rebuildFrameId = requestAnimationFrame(() => {
     rebuildFrameId = null;
-    rebuildFromSequence(committedSequence + currentInputSnapshot);
+    rebuildFromSequence(nextSequence);
   });
 }
 
@@ -409,7 +418,11 @@ function scheduleNode(callback, delay, instant = false) {
     return;
   }
 
+  const cycle = renderCycle;
+
   const timerId = setTimeout(() => {
+    if (cycle !== renderCycle) return;
+
     callback();
     activeTimers = activeTimers.filter((id) => id !== timerId);
   }, delay);
@@ -418,6 +431,7 @@ function scheduleNode(callback, delay, instant = false) {
 }
 
 function resetRuntimeState() {
+  renderCycle += 1;
   clearActiveTimers();
 
   currentLineIndex = 0;
@@ -446,11 +460,14 @@ function resetRuntimeState() {
 function rebuildFromSequence(sequence) {
   resetRuntimeState();
 
-  for (const token of sequence) {
+  for (let i = 0; i < sequence.length; i++) {
+    const token = sequence[i];
+
     if (token === "\n") {
       processLineBreak(true);
     } else {
-      processCharacter(token, true);
+      const shouldAnimate = i === animatedTokenIndex;
+      processCharacter(token, !shouldAnimate);
     }
   }
 
@@ -463,11 +480,6 @@ function processLineBreak(isRebuild = false) {
 
   currentLineIndex += 1;
 
-  /*
-    엔터 후 너무 옆으로 가지 않도록 LINE_GAP_X를 작게 사용.
-    새 줄은 기존 글자를 지우지 않고,
-    첫 시작점 근처로 돌아와서 다시 위로 쌓임.
-  */
   currentLineStartX = START_X + currentLineIndex * LINE_GAP_X;
 
   lastPos = {
@@ -508,12 +520,12 @@ function processCharacter(char, instant = false) {
     }
 
     if ((lastKey === "H" && char === "T") || (lastKey === "T" && char === "H")) {
-      renderIntermediateNode("HT_INTER", char);
+      renderIntermediateNode("HT_INTER", char, instant);
       checkMasterLogic("HT_INTER");
     }
 
     if ((lastKey === "I" && char === "C") || (lastKey === "C" && char === "I")) {
-      renderIntermediateNode("IC_INTER", char);
+      renderIntermediateNode("IC_INTER", char, instant);
       checkMasterLogic("IC_INTER");
     }
 
@@ -528,7 +540,7 @@ function processCharacter(char, instant = false) {
     }
 
     if ((lastKey === "A" && char === "B") || (lastKey === "B" && char === "A")) {
-      renderIntermediateNode("AB_INTER", char);
+      renderIntermediateNode("AB_INTER", char, instant);
       checkMasterLogic("AB_INTER");
     }
 
@@ -537,7 +549,7 @@ function processCharacter(char, instant = false) {
     } else if (char === "Z" && lastKey === "Z") {
       handleZVariant(char);
     } else if (char === "A" && lastKey === "A") {
-      handleAVariant(char);
+      handleAVariant(char, instant);
       checkMasterLogic("A");
     } else {
       processTyping(char);
@@ -620,15 +632,29 @@ function renderAHorizontalSequence(baseX, baseY, sourceInput = "A", instant = fa
   }
 }
 
-function handleAVariant(sourceInput = "A") {
+function handleAVariant(sourceInput = "A", instant = false) {
   aCounter = (aCounter % 5) + 1;
+
   const imgName = `A_STACK${aCounter}`;
+  const nX = lastPos.x;
   const nY = lastPos.y - 95;
 
-  createSucculentElement(imgName, lastPos.x, nY, 0, sourceInput, "A", 0, 90);
+  scheduleNode(() => {
+    createSucculentElement(
+      imgName,
+      nX,
+      nY,
+      0,
+      sourceInput,
+      "A",
+      0,
+      90
+    );
+  }, 180, instant);
 
-  lastPos = { x: lastPos.x, y: nY };
-  moveCamera(lastPos.x, nY, "auto");
+  lastPos = { x: nX, y: nY };
+
+  moveCamera(nX, nY, "auto");
 
   lastKey = "A";
   wCounter = 0;
@@ -652,7 +678,7 @@ function handleZVariant(sourceInput = "Z") {
 }
 
 function renderACSequence(sourceInput = "C", instant = false) {
-  renderIntermediateNode("AC_COMBO", sourceInput);
+  renderIntermediateNode("AC_COMBO", sourceInput, instant);
 
   scheduleNode(() => {
     createSucculentElement(
@@ -788,17 +814,23 @@ function handleWVariant(sourceInput = "W") {
   zCounter = 0;
 }
 
-function renderIntermediateNode(imgName, sourceInput = "-") {
-  createSucculentElement(
-    imgName,
-    lastPos.x + Math.random() * 60 - 30,
-    lastPos.y - 70,
-    0,
-    sourceInput,
-    lastKey,
-    null,
-    null
-  );
+function renderIntermediateNode(imgName, sourceInput = "-", instant = false) {
+  const x = lastPos.x + Math.random() * 60 - 30;
+  const y = lastPos.y - 70;
+  const prev = lastKey;
+
+  scheduleNode(() => {
+    createSucculentElement(
+      imgName,
+      x,
+      y,
+      0,
+      sourceInput,
+      prev,
+      null,
+      null
+    );
+  }, 160, instant);
 }
 
 function renderRandomNode(imgName, sourceInput = "?") {
