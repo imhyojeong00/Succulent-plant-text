@@ -128,7 +128,8 @@ input {
 
 #decode-btn,
 #receipt-close,
-#receipt-download {
+#receipt-download,
+#growth-map-close {
   background: transparent;
   border: none;
   color: #888888;
@@ -141,7 +142,8 @@ input {
 
 #decode-btn:hover,
 #receipt-close:hover,
-#receipt-download:hover {
+#receipt-download:hover,
+#growth-map-close:hover {
   color: #000000;
   text-decoration: underline;
 }
@@ -174,6 +176,64 @@ input {
 #utility-layer button:hover {
   color: rgba(0, 0, 0, 0.72);
   transform: translateY(-1px);
+}
+
+#growth-map-btn.active,
+#growth-xray-btn.active {
+  color: rgba(60, 150, 80, 0.82);
+}
+
+#growth-map-panel {
+  position: fixed;
+  top: 24px;
+  left: 64px;
+  width: 420px;
+  height: 456px;
+  z-index: 10000004;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(60, 150, 80, 0.15);
+  border-radius: 14px;
+  padding: 12px;
+  display: none;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.06);
+}
+
+#growth-map-panel.show {
+  display: block;
+}
+
+#growth-map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.72);
+  margin-bottom: 8px;
+}
+
+#growth-map-svg {
+  width: 100%;
+  height: 410px;
+  overflow: visible;
+}
+
+#growth-map-svg line,
+#growth-map-svg path {
+  stroke: rgba(60, 150, 80, 0.42);
+  stroke-width: 1.15;
+  fill: none;
+}
+
+#growth-map-svg circle {
+  fill: rgba(60, 150, 80, 0.84);
+}
+
+#growth-map-svg text {
+  fill: rgba(60, 150, 80, 0.78);
+  font-size: 11px;
+  font-family: "Courier New", monospace;
 }
 
 #receipt-panel {
@@ -247,4 +307,79 @@ input {
 
 .hide-succulent .succulent-node img {
   opacity: 0;
+}
+
+.growth-skeleton {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 190px;
+  height: 190px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: none;
+  overflow: visible;
+  z-index: 10000;
+}
+
+.growth-skeleton path,
+.growth-skeleton line,
+.growth-skeleton circle,
+.growth-skeleton ellipse {
+  stroke: rgba(60, 150, 80, 0.78);
+  stroke-width: 1.35;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.growth-skeleton .growth-point {
+  fill: rgba(60, 150, 80, 0.98);
+  stroke: none;
+}
+
+body.xray-active .succulent-node img {
+  opacity: 0.08;
+  filter: grayscale(1) contrast(1.2);
+}
+
+body.xray-active .growth-skeleton {
+  display: block;
+}
+body.xray-active .succulent-node img {
+  opacity: 0;
+}
+
+body.xray-active .growth-skeleton {
+  display: none;
+}
+
+#growth-branch-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50000px;
+  height: 50000px;
+  pointer-events: none;
+  z-index: 9000;
+  display: none;
+  overflow: visible;
+}
+
+body.xray-active #growth-branch-layer {
+  display: block;
+}
+
+#growth-branch-layer path,
+#growth-branch-layer line,
+#growth-branch-layer ellipse,
+#growth-branch-layer circle {
+  fill: none;
+  stroke: rgba(60, 150, 80, 0.78);
+  stroke-width: 1.35;
+  vector-effect: non-scaling-stroke;
+}
+
+#growth-branch-layer .growth-dot {
+  fill: rgba(60, 150, 80, 0.95);
+  stroke: none;
 }
