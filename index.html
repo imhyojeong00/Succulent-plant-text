@@ -36,8 +36,18 @@
   </div>
 
   <div id="utility-layer">
+    <button id="growth-map-btn" title="Growth Map">☷</button>
+    <button id="growth-xray-btn" title="Growth X-Ray">⌁</button>
     <button id="receipt-btn" title="Receipt">▤</button>
     <button id="save-btn" title="Save">↓</button>
+  </div>
+
+  <div id="growth-map-panel">
+    <div id="growth-map-header">
+      <span>GENETIC GROWTH MAP</span>
+      <button id="growth-map-close">×</button>
+    </div>
+    <svg id="growth-map-svg" viewBox="0 0 520 520"></svg>
   </div>
 
   <div id="receipt-panel">
@@ -50,8 +60,10 @@
     <button id="receipt-download">[DOWNLOAD TXT]</button>
   </div>
 
-  <div id="render-stage">
-    <div id="coord-layer"></div>
-  </div>
+<div id="render-stage">
+  <svg id="growth-branch-layer"></svg>
+  <div id="coord-layer"></div>
+</div>
 </body>
+
 </html>
